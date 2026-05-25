@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
 import MetricCard from "@/components/MetricCard";
-import type { DashboardMetrics } from "@/lib/types";
+import type { DashboardMetrics, Lease } from "@/lib/types";
 import { format, parseISO } from "date-fns";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend,
@@ -16,12 +16,25 @@ export default function DashboardPage() {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [leasePage, setLeasePage] = useState(1);
+  const [leasesResult, setLeasesResult] = useState<{ leases: Lease[]; total: number; page: number } | null>(null);
+  const leasesLoading = leasesResult === null || leasesResult.page !== leasePage;
+
   useEffect(() => {
     fetch("/api/dashboard")
       .then((r) => r.json())
       .then((d) => { setMetrics(d); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/dashboard/expiring-leases?page=${leasePage}`)
+      .then((r) => r.json())
+      .then((d) => { if (!cancelled) setLeasesResult(d); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [leasePage]);
 
   const maintenanceChartData = metrics
     ? [
@@ -185,30 +198,57 @@ export default function DashboardPage() {
                 </div>
                 <a href="/tenants" className="text-blue-400 text-xs hover:text-blue-300">View all →</a>
               </div>
-              {loading ? (
+              {leasesLoading ? (
                 <div className="space-y-3">
                   {[1,2,3].map(i => <div key={i} className="h-10 rounded-lg bg-white/5 animate-pulse" />)}
                 </div>
-              ) : metrics?.expiringLeases.leases.length === 0 ? (
+              ) : leasesResult?.leases.length === 0 ? (
                 <p className="text-slate-500 text-sm text-center py-6">No leases expiring soon 🎉</p>
-              ) : (
-                <div className="space-y-2">
-                  {(metrics?.expiringLeases.leases ?? []).map((lease: any) => {
-                    const daysLeft = Math.ceil((new Date(lease.end_date).getTime() - Date.now()) / 86400000);
-                    return (
-                      <div key={lease.id} className="flex items-center justify-between p-3 rounded-lg bg-white/[0.03] border border-white/[0.06]">
-                        <div>
-                          <p className="text-white text-sm font-medium">{lease.tenants?.full_name ?? "—"}</p>
-                          <p className="text-slate-500 text-xs">{lease.units?.properties?.name} · Unit {lease.units?.unit_number}</p>
-                        </div>
-                        <span className={`text-xs font-semibold px-2 py-1 rounded-full ${daysLeft <= 15 ? "bg-red-500/10 text-red-400" : "bg-orange-500/10 text-orange-400"}`}>
-                          {daysLeft}d left
+              ) : (() => {
+                const now = new Date().getTime();
+                const totalPages = Math.ceil((leasesResult?.total ?? 0) / 5);
+                return (
+                  <>
+                    <div className="space-y-2">
+                      {(leasesResult?.leases ?? []).map((lease) => {
+                        const daysLeft = Math.ceil((new Date(lease.end_date).getTime() - now) / 86400000);
+                        return (
+                          <div key={lease.id} className="flex items-center justify-between p-3 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                            <div>
+                              <p className="text-white text-sm font-medium">{lease.tenants?.full_name ?? "—"}</p>
+                              <p className="text-slate-500 text-xs">{lease.units?.properties?.name} · Unit {lease.units?.unit_number}</p>
+                            </div>
+                            <span className={`text-xs font-semibold px-2 py-1 rounded-full ${daysLeft <= 15 ? "bg-red-500/10 text-red-400" : "bg-orange-500/10 text-orange-400"}`}>
+                              {daysLeft}d left
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {totalPages > 1 && (
+                      <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/[0.06]">
+                        <button
+                          onClick={() => setLeasePage(p => p - 1)}
+                          disabled={leasePage === 1}
+                          className="text-xs text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        >
+                          ← Prev
+                        </button>
+                        <span className="text-xs text-slate-500">
+                          Page {leasePage} of {totalPages}
                         </span>
+                        <button
+                          onClick={() => setLeasePage(p => p + 1)}
+                          disabled={leasePage >= totalPages}
+                          className="text-xs text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        >
+                          Next →
+                        </button>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
+                    )}
+                  </>
+                );
+              })()}
             </div>
 
             {/* Pending payments */}
