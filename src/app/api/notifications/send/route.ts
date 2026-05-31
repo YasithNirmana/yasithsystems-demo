@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendWhatsApp, NotificationTemplates } from "@/lib/twilio";
 import { supabaseAdmin } from "@/lib/supabase";
+import { aiChat } from "@/lib/ai";
 import type { NotificationType } from "@/lib/types";
 
 interface SendPayload {
@@ -44,20 +45,57 @@ export async function POST(req: NextRequest) {
   // Build message from template or custom
   let message = customMessage ?? "";
   if (!message) {
-    switch (type) {
-      case "rent_reminder":
-        message = body.daysOverdue && body.daysOverdue > 0
-          ? NotificationTemplates.rentOverdue(tenant.full_name, body.amount!, body.daysOverdue)
-          : NotificationTemplates.rentReminder(tenant.full_name, body.amount!, body.dueDate!);
-        break;
-      case "lease_expiry":
-        message = NotificationTemplates.leaseExpiry(tenant.full_name, body.unitNumber!, body.expiryDate!, body.daysLeft!);
-        break;
-      case "maintenance_update":
-        message = NotificationTemplates.maintenanceUpdate(tenant.full_name, body.requestTitle!, body.requestStatus!, body.assignedTo);
-        break;
-      default:
-        return NextResponse.json({ error: "customMessage required for type=custom" }, { status: 400 });
+    try {
+      let aiPrompt = "";
+      if (type === "rent_reminder") {
+        const isOverdue = body.daysOverdue && body.daysOverdue > 0;
+        aiPrompt = `Write a friendly, professional WhatsApp notification to tenant ${tenant.full_name}.
+Type of message: Rent Reminder.
+${isOverdue ? `Rent is ${body.daysOverdue} days overdue. Amount: $${body.amount}.` : `Rent is due on ${body.dueDate}. Amount: $${body.amount}.`}
+Include property management name "YasithSystems". Keep it concise (under 250 characters), warm, and include emojis. Respond ONLY with the message text, no quotes or metadata.`;
+      } else if (type === "lease_expiry") {
+        aiPrompt = `Write a friendly, professional WhatsApp notification to tenant ${tenant.full_name}.
+Type of message: Lease Expiry.
+Unit number: ${body.unitNumber}. Lease expires on ${body.expiryDate} (${body.daysLeft} days remaining).
+Ask them to discuss renewal options. Include property management name "YasithSystems". Keep it concise (under 250 characters), warm, and include emojis. Respond ONLY with the message text, no quotes or metadata.`;
+      } else if (type === "maintenance_update") {
+        const assignedPart = body.assignedTo ? ` ${body.assignedTo} has been assigned.` : "";
+        aiPrompt = `Write a friendly, professional WhatsApp notification to tenant ${tenant.full_name}.
+Type of message: Maintenance Update.
+Request title: "${body.requestTitle}". New status: "${body.requestStatus}".${assignedPart}
+Include property management name "YasithSystems". Keep it concise (under 250 characters), warm, and include emojis. Respond ONLY with the message text, no quotes or metadata.`;
+      }
+
+      if (aiPrompt) {
+        const aiResponse = await aiChat([
+          { role: "system", content: "You are a professional property manager assistant. Write friendly WhatsApp messages." },
+          { role: "user", content: aiPrompt }
+        ]);
+        message = aiResponse.trim();
+        if (message.startsWith('"') && message.endsWith('"')) {
+          message = message.substring(1, message.length - 1);
+        }
+      }
+    } catch (aiErr) {
+      console.error("AI notification generation failed, falling back to template:", aiErr);
+    }
+
+    if (!message) {
+      switch (type) {
+        case "rent_reminder":
+          message = body.daysOverdue && body.daysOverdue > 0
+            ? NotificationTemplates.rentOverdue(tenant.full_name, body.amount!, body.daysOverdue)
+            : NotificationTemplates.rentReminder(tenant.full_name, body.amount!, body.dueDate!);
+          break;
+        case "lease_expiry":
+          message = NotificationTemplates.leaseExpiry(tenant.full_name, body.unitNumber!, body.expiryDate!, body.daysLeft!);
+          break;
+        case "maintenance_update":
+          message = NotificationTemplates.maintenanceUpdate(tenant.full_name, body.requestTitle!, body.requestStatus!, body.assignedTo);
+          break;
+        default:
+          return NextResponse.json({ error: "customMessage required for type=custom" }, { status: 400 });
+      }
     }
   }
 

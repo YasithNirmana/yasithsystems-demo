@@ -104,7 +104,38 @@ export default function NotificationsPage() {
                 <select
                   className="w-full bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50"
                   value={form.tenantId}
-                  onChange={(e) => setForm({ ...form, tenantId: e.target.value })}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    const tenant = tenants.find((t) => t.id === id) as any;
+                    if (tenant) {
+                      const activeLease = tenant.leases?.find((l: any) => l.status === "active" || l.status === "expiring_soon");
+                      const pendingPayment = tenant.payments?.find((p: any) => p.status === "pending" || p.status === "overdue");
+                      let daysRemaining = "";
+                      if (activeLease?.end_date) {
+                        const diffTime = new Date(activeLease.end_date).getTime() - new Date().getTime();
+                        daysRemaining = String(Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24))));
+                      }
+                      setForm({
+                        ...form,
+                        tenantId: id,
+                        amount: pendingPayment ? String(pendingPayment.amount) : (tenant.units ? String(tenant.units.monthly_rent) : ""),
+                        dueDate: pendingPayment ? pendingPayment.due_date : "",
+                        unitNumber: tenant.units ? String(tenant.units.unit_number) : "",
+                        expiryDate: activeLease ? activeLease.end_date : "",
+                        daysLeft: daysRemaining,
+                      });
+                    } else {
+                      setForm({
+                        ...form,
+                        tenantId: "",
+                        amount: "",
+                        dueDate: "",
+                        unitNumber: "",
+                        expiryDate: "",
+                        daysLeft: "",
+                      });
+                    }
+                  }}
                 >
                   <option value="">Select a tenant...</option>
                   {tenants.map((t) => (
