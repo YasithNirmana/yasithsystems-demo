@@ -39,11 +39,12 @@ export async function POST(req: NextRequest) {
 
     if (from) {
       // Check if we can find a tenant by whatsapp_number or phone
+      const fromCleaned = from.replace(/^whatsapp:/i, "");
       const { data: tenant } = await supabaseAdmin
         .from("tenants")
         .select("id, unit_id")
-        .or(`whatsapp_number.eq.${from},phone.eq.${from.replace("whatsapp:", "")}`)
-        .single();
+        .or(`whatsapp_number.eq.${from},whatsapp_number.eq.${fromCleaned},phone.eq.${fromCleaned}`)
+        .maybeSingle();
 
       if (tenant) {
         tenantId = tenant.id;
