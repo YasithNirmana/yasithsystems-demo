@@ -5,7 +5,7 @@ import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
 import StatusBadge from "@/components/StatusBadge";
 import PriorityBadge from "@/components/PriorityBadge";
-import type { MaintenanceRequest, AIClassificationResult } from "@/lib/types";
+import type { MaintenanceRequest, AIClassificationResult, Tenant } from "@/lib/types";
 import { format, parseISO } from "date-fns";
 
 type FilterStatus = "all" | "open" | "in_progress" | "resolved" | "closed";
@@ -13,6 +13,7 @@ type FilterPriority = "all" | "low" | "medium" | "high" | "urgent";
 
 export default function MaintenancePage() {
   const [requests, setRequests] = useState<MaintenanceRequest[]>([]);
+  const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("all");
   const [priorityFilter, setPriorityFilter] = useState<FilterPriority>("all");
@@ -27,6 +28,13 @@ export default function MaintenancePage() {
     unit_id: "",
     tenant_id: "",
   });
+
+  useEffect(() => {
+    fetch("/api/tenants")
+      .then((r) => r.json())
+      .then((data) => setTenants(Array.isArray(data) ? data : []))
+      .catch((e) => console.error("Error fetching tenants:", e));
+  }, []);
 
   const fetchRequests = useCallback(async () => {
     setLoading(true);
@@ -220,6 +228,29 @@ export default function MaintenancePage() {
               <button onClick={() => { setShowNewForm(false); setClassification(null); }} className="text-slate-500 hover:text-white">✕</button>
             </div>
             <div className="p-6 space-y-4">
+              <div>
+                <label className="text-slate-400 text-xs font-medium block mb-1.5">Tenant & Unit (Optional)</label>
+                <select
+                  className="w-full bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500/50 cursor-pointer"
+                  value={form.tenant_id}
+                  onChange={(e) => {
+                    const selectedId = e.target.value;
+                    const tenant = tenants.find((t) => t.id === selectedId);
+                    setForm({
+                      ...form,
+                      tenant_id: selectedId,
+                      unit_id: tenant?.unit_id || "",
+                    });
+                  }}
+                >
+                  <option value="">Select tenant...</option>
+                  {tenants.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.full_name} {t.units ? `— Unit ${t.units.unit_number} (${t.units.properties?.name})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label className="text-slate-400 text-xs font-medium block mb-1.5">Title</label>
                 <input

@@ -35,7 +35,17 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await supabaseAdmin
     .from("maintenance_requests")
-    .insert({ unit_id, tenant_id, title, description, category, priority, assigned_to, ai_classified: ai_classified ?? false, technician_notes })
+    .insert({
+      unit_id: unit_id || null,
+      tenant_id: tenant_id || null,
+      title,
+      description,
+      category,
+      priority,
+      assigned_to,
+      ai_classified: ai_classified ?? false,
+      technician_notes,
+    })
     .select()
     .single();
 
